@@ -64,6 +64,7 @@
 | 自然语言任务 | `language_mission` | 解析中文指令 → 查语义地图 → 导航 → 相机抓拍 → 视觉问答，任务日志落盘 |
 | 位姿初始化 | `initial_pose_publisher` | 启动时把 AMCL 初始位姿对齐到 Gazebo 出生点，避免定位漂移 |
 | 目标下发 | `goal_client` | 命令行发送 `NavigateToPose` 目标 |
+| 指令图形界面 | `language_gui` | Tkinter 窗口，输入中文指令后发到 `/language/command`，并实时显示任务日志 |
 
 ## 系统架构
 
@@ -251,6 +252,8 @@ RRT\* 主干代码只有一份，三个算法共用，**唯一差异是采样器
 ```bash
 ros2 topic pub --once /language/command std_msgs/msg/String "{data: '去货架B观察一下'}"
 ```
+
+图形界面：另开终端执行 `ros2 run car_nav language_gui`，窗口中输入中文指令、点快捷按钮即可，日志区实时显示任务输出。
 
 未配置大模型 API 时自动退回规则解析，不影响演示。
 

@@ -35,6 +35,7 @@ setup(
             'mission_runner = car_nav.mission_runner:main',
             'gmr_planner_node = car_nav.gmr_planner_node:main',
             'language_mission = car_nav.language_mission_node:main',
+            'language_gui = car_nav.language_gui:main',
         ],
     },
 )
