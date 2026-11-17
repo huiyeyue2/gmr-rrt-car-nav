@@ -68,8 +68,8 @@ def launch_setup(context):
         default_params = os.path.join(tb3_nav2, 'param', 'humble',
                                       model + '.yaml')
     # 注意: ROS 2 Humble 的 launch 参数序列化会把非 ASCII 路径转成 \uXXXX 字面量
-    # (如 F盘 -> Fu76D8), 因此地图 yaml 优先用 ASCII 镜像目录 /home/yzh/car_maps/
-    map_file = os.path.join('/home/yzh/car_maps', scene['map'])
+    # (如含中文的目录 -> \uXXXX), 因此地图 yaml 优先用 ASCII 镜像目录 ~/car_maps/
+    map_file = os.path.join(os.path.expanduser('~/car_maps'), scene['map'])
     if not os.path.exists(map_file):
         map_file = os.path.join(car_nav_share, 'maps', scene['map'])
 

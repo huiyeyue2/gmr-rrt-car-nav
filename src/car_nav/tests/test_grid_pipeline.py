@@ -8,6 +8,7 @@
   python3 src/car_nav/tests/test_grid_pipeline.py [地图pgm] [分辨率] [origin_x] [origin_y]
 """
 
+import os
 import sys
 import time
 
@@ -42,8 +43,9 @@ def read_pgm(path):
 
 
 def main():
-    pgm = sys.argv[1] if len(sys.argv) > 1 else \
-        '/home/yzh/workspace/F盘/listudy/car/car_ws/src/car_nav/maps/obstacle_field.pgm'
+    pgm = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        'maps', 'obstacle_field.pgm')
     res = float(sys.argv[2]) if len(sys.argv) > 2 else 0.05
     ox = float(sys.argv[3]) if len(sys.argv) > 3 else -6.11
     oy = float(sys.argv[4]) if len(sys.argv) > 4 else -5.95

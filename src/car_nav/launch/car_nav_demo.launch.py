@@ -45,8 +45,8 @@ def generate_launch_description():
             'param', 'humble', model + '.yaml')
 
     # ROS 2 Humble 的 launch 参数序列化会把非 ASCII 路径转成 \uXXXX 字面量
-    # (如 F盘 -> Fu76D8), 因此地图 yaml 优先用 ASCII 镜像目录 /home/yzh/car_maps/
-    default_map = '/home/yzh/car_maps/obstacle_field.yaml'
+    # (如含中文的目录 -> \uXXXX), 因此地图 yaml 优先用 ASCII 镜像目录 ~/car_maps/
+    default_map = os.path.expanduser('~/car_maps/obstacle_field.yaml')
     if not os.path.exists(default_map):
         default_map = os.path.join(car_nav_share, 'maps', 'obstacle_field.yaml')
 

@@ -12,9 +12,10 @@ source "$(dirname "$0")/../../../install/setup.bash"
 export TURTLEBOT3_MODEL=burger_cam          # 带相机的 TurtleBot3
 
 MAP_DIR="$(dirname "$0")/../maps"
-mkdir -p /home/yzh/car_maps
-cp -u "$MAP_DIR"/*.pgm "$MAP_DIR"/*.yaml /home/yzh/car_maps/
-echo ">>> 生效地图: $(head -c 32 /home/yzh/car_maps/obstacle_field.pgm | tr '\n' ' ')"
+CAR_MAPS="$HOME/car_maps"
+mkdir -p "$CAR_MAPS"
+cp -u "$MAP_DIR"/*.pgm "$MAP_DIR"/*.yaml "$CAR_MAPS"/
+echo ">>> 生效地图: $(head -c 32 "$CAR_MAPS"/obstacle_field.pgm | tr '\n' ' ')"
 
 echo ">>> 启动导航底座 (Gazebo + Nav2 + RViz, 含相机画面面板)"
 ros2 launch car_nav nav_demo.launch.py &

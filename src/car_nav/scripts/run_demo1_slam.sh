@@ -74,5 +74,5 @@ fi
 echo ">>> 完成。建图结果: $(basename "$MAP_BASE").pgm"
 echo "    导航演示(demo2/3/4)用的是与仿真世界一致的 maps/obstacle_field.pgm,"
 echo "    若要改用本次建图结果, 手动把它拷到地图目录:"
-echo "    cp \"$MAP_BASE\".pgm \"$MAP_BASE\".yaml /home/yzh/car_maps/  # 再重命名为 obstacle_field.*"
+echo "    cp \"$MAP_BASE\".pgm \"$MAP_BASE\".yaml $HOME/car_maps/  # 再重命名为 obstacle_field.*"
 echo ">>> 同步到 Windows: scripts/sync_back.sh"

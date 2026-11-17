@@ -12,9 +12,10 @@ export TURTLEBOT3_MODEL=burger
 # 地图同步到 ASCII 路径(Humble launch 参数不兼容非 ASCII 路径)
 # 用 -u 只覆盖更新的文件, 避免包里的旧/残缺地图把 car_maps 里已建好的好图冲掉
 MAP_DIR="$(dirname "$0")/../maps"
-mkdir -p /home/yzh/car_maps
-cp -u "$MAP_DIR"/*.pgm "$MAP_DIR"/*.yaml /home/yzh/car_maps/
-echo ">>> 生效地图: $(basename "$MAP_DIR"/obstacle_field.pgm) $(head -c 32 /home/yzh/car_maps/obstacle_field.pgm | tr '\n' ' ')"
+CAR_MAPS="$HOME/car_maps"
+mkdir -p "$CAR_MAPS"
+cp -u "$MAP_DIR"/*.pgm "$MAP_DIR"/*.yaml "$CAR_MAPS"/
+echo ">>> 生效地图: $(basename "$MAP_DIR"/obstacle_field.pgm) $(head -c 32 "$CAR_MAPS"/obstacle_field.pgm | tr '\n' ' ')"
 
 echo ">>> 启动导航演示 (Gazebo + Nav2 + 自动初始位姿 + 航点任务)"
 echo "    5 个巡逻航点, 终端实时打印 剩余距离/到达 状态"
