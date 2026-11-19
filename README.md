@@ -57,7 +57,7 @@
 
 | 模块 | 可执行文件 | 说明 |
 |---|---|---|
-| SLAM 自主建图 | `frontier_explore` | 基于前沿（frontier）的自主探索，边扫边建图，完成后自动保存地图 |
+| SLAM 自主建图 | `frontier_explore` / `roadmap_exploration_server` | 基于 roadmap_explorer + Nav2 的自主探索，按参考地图覆盖率自动停止并保存地图 |
 | 航点巡逻 | `mission_runner` | 用 `nav2_simple_commander` 依次前往多个航点，可跨房间 |
 | GMR-RRT\* 规划 | `gmr_planner_node` | 读 `/map` 与 `/amcl_pose`，生成 GMM→GMR→RRT\* 路径，交给 Nav2 `FollowPath` 执行 |
 | A\* 规划 | `astar_planner` | 独立栅格 A\* 实现，用于离线对比与调试 |
@@ -131,6 +131,7 @@ car_ws/
 | 机器人模型 | TurtleBot3 Burger | `export TURTLEBOT3_MODEL=burger` |
 | 导航 | Nav2 | `nav2_bringup`、`nav2_simple_commander` |
 | SLAM | slam_toolbox | 在线异步建图 |
+| 自主探索 | roadmap_explorer | 前沿 + roadmap 目标排序，需源码构建，见 [演示 1 说明](docs/demo1-autonomous-exploration.md) |
 | Python | 3.10 | numpy、scikit-learn、opencv、pyyaml |
 
 安装依赖：
@@ -162,10 +163,12 @@ source install/setup.bash
 
 | 演示 | 命令 | 内容 |
 |---|---|---|
-| 1. SLAM 建图 | `bash src/car_nav/scripts/run_demo1_slam.sh` | 自主探索整个场地并自动保存地图 |
+| 1. SLAM 建图 | `bash src/car_nav/scripts/run_demo1_roadmap.sh` | roadmap_explorer + Nav2 自主探索，覆盖率达到 95% 自动保存地图 |
 | 2. 航点导航 | `bash src/car_nav/scripts/run_demo2_mission.sh` | 加载静态地图，依次前往 4–5 个航点 |
 | 3. GMR-RRT\* | `bash src/car_nav/scripts/run_demo3_gmrrrt.sh` | 启动导航后用 RViz 点目标，走算法路径 |
 | 4. 自然语言 | `bash src/car_nav/scripts/run_demo4_language.sh` | 终端输入中文指令，机器人前往并观察 |
+
+> 演示 1 的完整方案（组件职责、覆盖率判据、停滞恢复机制、实测数据）见 [docs/demo1-autonomous-exploration.md](docs/demo1-autonomous-exploration.md)。
 
 也可直接使用 launch 文件：
 
@@ -262,6 +265,8 @@ ros2 topic pub --once /language/command std_msgs/msg/String "{data: '去货架B�
 **Q1：`ros2 launch` 起来后车不动**
 
 按顺序排查：`ros2 topic echo /clock --once` 有没有输出 → `ros2 topic info /map` 的 Publisher count 是否为 1 → `ros2 run tf2_ros tf2_echo map base_footprint` 是否打印位移。哪一步断了问题就在那里。最常见原因是上一轮进程没杀干净。
+
+另一个隐蔽原因：残留的 `static_transform_publisher` 在发固定的 `map → base_link`，会和 slam_toolbox 的 `map → odom` 冲突，表现为"地图看着正常但车一步不动"，此时 `tf2_echo map base_link` 会报外推错误。启动脚本已把它纳入清理范围。
 
 **Q2：AMCL 定位飘到原点**
 

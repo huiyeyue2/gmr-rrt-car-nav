@@ -1,0 +1,102 @@
+# roadmap_explorer 参数 —— 针对本项目 obstacle_field 场地 + TurtleBot3 Burger 调整
+# 原始文件: roadmap_explorer/params/tb3_exploration_params.yaml
+# 关键改动:
+#   - localisation_only_mode: false (我们用 SLAM 在线建图)
+#   - sensor_max_range: 3.5 (TB3 Burger LDS 射程)
+#   - camera_fov: 6.28 (360° Lidar 而非相机)
+#   - exploration_boundary: 场地 ±5.8m 矩形
+#   - robot_radius: 0.18 (TB3 Burger 实际 0.105m, 留安全余量)
+
+roadmap_explorer_node:
+  ros__parameters:
+    use_sim_time: True
+    localisation_only_mode: False  # SLAM 模式, 我们正在建图
+
+    frontierSearch:
+      frontier_search_distance: 8.0  # 12x12m 场地, 8m 足够覆盖
+      max_permissable_frontier_search_distance: 25.0
+      increment_search_distance_by: 2.0
+      plugin_name: "GridBasedBFS"
+      GridBasedBFS:
+        plugin_type: "roadmap_explorer::FrontierBFSearch"
+        min_frontier_cluster_size: 0.5
+        max_frontier_cluster_size: 20.0
+        lethal_threshold: 160
+
+    costAssigner:
+      information_gain_plugin_name: "CountBasedGain"
+      CountBasedGain:
+        plugin_type: "roadmap_explorer::CountBasedGain"
+        # 关键: 射线从 costmap 中心向四周射 MAX_CAMERA_DEPTH 米,
+        # 初始地图很小(4.5m宽)时, 必须 < 半边长, 否则射线出界崩溃
+        # 初始地图约 4.5m 宽, 2.0m 小于初始半边长且提高后期信息增益评估范围
+        max_camera_depth: 2.0
+        delta_theta: 0.10
+        camera_fov: 6.28           # 360° Lidar
+        factor_of_max_is_min: 0.0
+
+      planner_plugin_name: "FrontierRoadmap"
+      FrontierRoadmap:
+        plugin_type: "roadmap_explorer::PluginFrontierRoadmap"
+        closeness_rejection_threshold: 0.25
+        planner_allow_unknown: true
+        max_planning_distance_roadmap: 12.5
+
+    frontierRoadmap:
+      max_graph_reconstruction_distance: 12.0
+      grid_cell_size: 1.0
+      radius_to_decide_edges: 6.1
+      min_distance_between_two_frontier_nodes: 0.25
+      min_distance_between_robot_pose_and_node: 0.25
+
+    fullPathOptimizer:
+      num_frontiers_in_local_area: 5.0
+      local_frontier_search_radius: 12.0
+      add_yaw_to_tsp: false
+      add_distance_to_robot_to_tsp: false
+      goal_hysteresis_threshold: 0.15  # 新目标必须好 15% 才切换, 防抖
+
+    explorationBT:
+      bt_sleep_ms: 70
+      # 场地矩形顶点 (逆时针): 右上(5.8,5.8), 右下(5.8,-5.8), 左下(-5.8,-5.8), 左上(-5.8,5.8)
+      exploration_boundary: [5.8, 5.8, 5.8, -5.8, -5.8, -5.8, -5.8, 5.8]
+      abort_exploration_on_nav2_abort: false
+      localisation_only_mode: false
+
+    sensorSimulator:
+      input_map_topic: "/map"
+      input_map_is_transient_local: true
+      explored_map_topic: "/explored_map"
+      angular_resolution: 0.013
+      sensor_update_rate: 1.0
+      sensor_min_angle: 0.0
+      sensor_max_angle: 6.30
+      sensor_max_range: 3.5        # TB3 Burger LDS 真实射程
+
+roadmap_explorer_costmap:
+  roadmap_explorer_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 5.0
+      global_frame: map
+      robot_base_frame: base_link
+      use_sim_time: True
+      resolution: 0.05
+      robot_radius: 0.18           # TB3 Burger + 余量
+      track_unknown_space: true
+      plugins: ["static_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        # SLAM 模式下订阅 slam_toolbox 的 /map, 不是 sensor_simulator 的 /explored_map
+        # (sensor_simulator 只在 localisation_only_mode=true 时才创建)
+        map_topic: "/map"
+        map_subscribe_transient_local: True
+        enabled: True
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: True
+        inflation_radius: 0.25
+        cost_scaling_factor: 3.0
+        inflate_unknown: false
+        inflate_around_unknown: false
+      always_send_full_costmap: True

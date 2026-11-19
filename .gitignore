@@ -24,6 +24,10 @@ Thumbs.db
 *.backup
 *.prev.pgm
 *.prev.yaml
+*.pgm.prev
+*.yaml.prev
+# 演示脚本的临时地图输出（正式地图归档在 src/car_nav/maps/）
+/maps/
 
 # Python 虚拟环境
 venv/
