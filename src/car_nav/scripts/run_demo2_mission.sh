@@ -1,5 +1,6 @@
 #!/bin/bash
 # ============ 演示 2: 航点导航巡逻任务（障碍物场地） ============
+# 2026-11-22: 增加 git 学习演练注释行（无功能影响）
 # 用法: bash run_demo2_mission.sh
 # 需要: 演示 1 保存的地图 (car_ws/src/car_nav/maps/obstacle_field.*)
 set -e
