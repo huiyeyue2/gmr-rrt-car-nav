@@ -159,16 +159,48 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-四个演示（每个都在**独立终端**中运行，启动脚本内部已 source 好环境）：
+四个演示（每个都在**独立终端**中运行，启动脚本内部已 source 好环境并统一使用 CycloneDDS）：
 
 | 演示 | 命令 | 内容 |
 |---|---|---|
-| 1. SLAM 建图 | `bash src/car_nav/scripts/run_demo1_roadmap.sh` | roadmap_explorer + Nav2 自主探索，覆盖率达到 95% 自动保存地图 |
-| 2. 航点导航 | `bash src/car_nav/scripts/run_demo2_mission.sh` | 加载静态地图，依次前往 4–5 个航点 |
+| 1. 自主探索建图 | `bash src/car_nav/scripts/run_demo1_roadmap.sh` | roadmap_explorer + Nav2 自主探索，参考地图覆盖率达到 95% 自动停止并保存地图 |
+| 2. 航点导航 | `bash src/car_nav/scripts/run_demo2_mission.sh` | 加载地图，依次前往 5 个航点，终端实时打印剩余距离/到达 |
 | 3. GMR-RRT\* | `bash src/car_nav/scripts/run_demo3_gmrrrt.sh` | 启动导航后用 RViz 点目标，走算法路径 |
-| 4. 自然语言 | `bash src/car_nav/scripts/run_demo4_language.sh` | 终端输入中文指令，机器人前往并观察 |
+| 4. 自然语言 | `bash src/car_nav/scripts/run_demo4_language.sh` | 终端输入中文指令，机器人前往并观察（burger_cam 相机抓拍） |
 
-> 演示 1 的完整方案（组件职责、覆盖率判据、停滞恢复机制、实测数据）见 [docs/demo1-autonomous-exploration.md](docs/demo1-autonomous-exploration.md)。
+### 地图自动传递（演示 1 -> 演示 2/3/4）
+
+**运行顺序：先跑演示 1，再跑演示 2/3/4，无需任何手动拷贝地图。**
+
+演示 1 结束时会把本轮构建的地图自动部署到 `src/car_nav/maps/obstacle_field.{pgm,yaml}`
+（同时在 `maps/` 归档一份带 `_roadmap` 后缀的实测证据）；演示 2/3/4 的脚本会自动把
+`src/car_nav/maps/` 下的地图同步到 `~/car_maps/`（ASCII 路径，规避 Humble launch
+参数序列化对非 ASCII 路径的转义问题），由 `nav_demo.launch.py` 优先加载：
+
+```text
+演示 1 探索建图 (覆盖率 >= 95% 自动停止)
+    | 自动部署 (sed 修正 image 路径 + 去掉 mode 字段)
+    v
+src/car_nav/maps/obstacle_field.{pgm,yaml}
+    | 演示 2/3/4 脚本内 cp -u 自动同步 (只覆盖更新的文件)
+    v
+~/car_maps/obstacle_field.{pgm,yaml}
+    | nav_demo.launch.py 优先加载
+    v
+演示 2 航点巡逻 | 演示 3 GMR-RRT* | 演示 4 自然语言
+```
+
+> - 地图 origin 与参考图的微小偏差（约 0.14 m）不影响导航：航点与出生点都是 Gazebo
+>   世界坐标，AMCL 定位后 Nav2 直接在世界坐标系下规划。
+> - 想恢复版本库自带的参考地图：
+>   `git checkout src/car_nav/maps/obstacle_field.pgm src/car_nav/maps/obstacle_field.yaml`，
+>   再手动 `cp src/car_nav/maps/obstacle_field.* ~/car_maps/`（注意脚本用 `cp -u`，
+>   checkout 后旧文件时间戳更早，需要先删除 `~/car_maps/` 里的同名文件）。
+> - 演示 1 的完整方案（组件职责、覆盖率判据、停滞恢复机制、实测数据）见
+>   [docs/demo1-autonomous-exploration.md](docs/demo1-autonomous-exploration.md)。
+> - 实测数据：演示 1 参考自由空间覆盖率 96.49%（约 19 分 40 秒自动停止）；
+>   演示 2 在该地图上 5/5 航点全部到达（约 257 秒）。
+
 
 也可直接使用 launch 文件：
 
@@ -187,7 +219,9 @@ ros2 launch car_nav nav_demo.launch.py scene:=house run_mission:=true
 
 ```bash
 pkill -9 -f "ros2 launch"; pkill -9 -f gzserver; pkill -9 -f gzclient; \
-pkill -9 -f rviz2; pkill -9 -f slam_toolbox; pkill -9 -f frontier_explore
+pkill -9 -f rviz2; pkill -9 -f slam_toolbox; pkill -9 -f roadmap_explorer; \
+pkill -9 -f amcl; pkill -9 -f bt_navigator; pkill -9 -f controller_server; \
+pkill -9 -f planner_server; pkill -9 -f map_server; pkill -9 -f static_transform_publisher
 ```
 
 ### 单独跑算法规划
@@ -285,6 +319,17 @@ ros2 run nav2_map_server map_saver_cli -f ./maps/xxx --ros-args -p save_map_time
 **Q4：构建后行为没变化**
 
 本包用 `--symlink-install`，改 Python 源码通常立即生效。若改的是 `setup.py`、`package.xml` 或 launch 入口点，必须重新 `colcon build`。
+
+**Q5：为什么要用 CycloneDDS**
+
+本项目环境（VMware 虚拟机 + ROS 2 Humble）下实测 FastDDS 有两个问题：演示 1 中
+roadmap_explorer 会 segfault；演示 2 中 lifecycle_manager 与各 Nav2 节点间的服务通信
+不稳定（日志刷 `RTPS_READER_HISTORY Error`），导致 map_server / controller_server
+configure 失败、全部航点秒失败。所有启动脚本已统一
+`export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`，手动运行 launch 时请同样设置。
+
+另外，启动前务必清干净上一轮残留进程（见上方"停止全部进程"），否则残留节点会干扰
+服务发现，表现为 Nav2 节点卡在 configure、odom/TF 链缺失等假故障。
 
 ## 引用
 

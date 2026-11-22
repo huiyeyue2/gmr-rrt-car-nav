@@ -6,6 +6,7 @@
 set -e
 export DISPLAY=:0
 export XAUTHORITY=$(ls /run/user/1000/.mutter-Xwaylandauth.* | head -1)
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 source /opt/ros/humble/setup.bash
 source "$(dirname "$0")/../../../install/setup.bash"
 export TURTLEBOT3_MODEL=burger
@@ -15,6 +16,17 @@ CAR_MAPS="$HOME/car_maps"
 mkdir -p "$CAR_MAPS"
 cp -u "$MAP_DIR"/*.pgm "$MAP_DIR"/*.yaml "$CAR_MAPS"/
 echo ">>> 生效地图: $(head -c 32 "$CAR_MAPS"/obstacle_field.pgm | tr '\n' ' ')"
+
+echo ">>> 清理残留进程 (demo1 结束后 Gazebo/RViz 保持运行供查看, 必须先清)"
+pkill -f '[r]oadmap' || true
+pkill -f '[s]lam_toolbox' || true
+pkill -f '[n]av2' || true
+pkill -f '[r]viz2' || true
+pkill -f '[g]zserver' || true
+pkill -f '[g]zclient' || true
+sleep 3
+pkill -9 -f '[g]zserver' || true
+pkill -9 -f '[g]zclient' || true
 
 echo ">>> 启动导航底座 (Gazebo + Nav2 + RViz)"
 ros2 launch car_nav nav_demo.launch.py &

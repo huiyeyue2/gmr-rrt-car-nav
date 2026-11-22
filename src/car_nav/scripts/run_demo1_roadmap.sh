@@ -10,13 +10,21 @@ TARGET_COVERAGE="${TARGET_COVERAGE:-0.95}"
 CHECK_INTERVAL="${CHECK_INTERVAL:-30}"
 MAX_RESTARTS="${MAX_RESTARTS:-8}"
 STALL_CHECKS_TO_RESTART=3
-MAP_STALL_CHECKS_TO_RESTART=4
+# 卡死挪车: 地图连续 2 个周期(2*CHECK_INTERVAL 秒)没更新就触发挪车
+MAP_STALL_CHECKS_TO_RESTART=2
 LAST_MAP_SIG=""
 MAP_STALL_TICKS=0
 BOUNDARY_HALF=5.8
+# 挪车安全点: 出生点, 必然已知自由且可达(车从这里出发)
+RECOVERY_X="${RECOVERY_X:--4.5}"
+RECOVERY_Y="${RECOVERY_Y:--4.5}"
 WS_CAR="/home/yzh/workspace/F盘/listudy/car/car_ws"
 WS_ROADMAP="/home/yzh/roadmap_ws"
-MAP_NAME="$WS_CAR/maps/obstacle_field_roadmap"
+# MAP_NAME 默认 obstacle_field: 与演示 2/3/4 消费的名字一致
+# ARCHIVE_NAME: 额外留一份带后缀的归档, 作为实测证据, 不覆盖后续演示使用的同名图
+MAP_NAME="$WS_CAR/maps/obstacle_field"
+ARCHIVE_NAME="$WS_CAR/maps/obstacle_field_roadmap"
+DEPLOY_DIR="$WS_CAR/src/car_nav/maps"
 COVERAGE_SCRIPT="$WS_CAR/src/car_nav/scripts/reachable_coverage.py"
 REFERENCE_MAP="$WS_CAR/src/car_nav/maps/obstacle_field.pgm"
 SESSION="$(date +%Y%m%d_%H%M%S)_$$"
@@ -39,24 +47,19 @@ export TURTLEBOT3_MODEL=burger
 
 cleanup() {
     set +e
-    echo '==清理进程=='
-    pkill -f '[r]oadmap_explorer roadmap_explorer_msgs/action/Explore'
-    pkill -f '[r]oadmap_explore.launch.py'
-    if [ -n "$GOAL_PID" ]; then
-        kill -INT "$GOAL_PID" 2>/dev/null
-    fi
+    echo '==收尾: 停探索/SLAM/Nav2, Gazebo + RViz 保持运行供查看=='
+    # SIGKILL 杀 launch 父进程不触发子进程级联关闭 → gzserver/gzclient/rviz2 存活
     if [ -n "${LAUNCH_PID:-}" ]; then
-        kill -INT "$LAUNCH_PID" 2>/dev/null
+        kill -9 "$LAUNCH_PID" 2>/dev/null || true
     fi
-    sleep 3
-    pkill -f '[g]zserver'
-    pkill -f '[g]zclient'
-    pkill -f '[r]viz2'
+    if [ -n "$GOAL_PID" ]; then
+        kill -9 "$GOAL_PID" 2>/dev/null || true
+    fi
     pkill -f '[r]oadmap_exploration_server'
-    # launch 被 SIGINT 后可能留下子节点: 不清会占着 /map 和 TF, 下次 RViz 只看到空白
-    pkill -f '[a]sync_slam_toolbox_node'
-    # 查看窗口遗留的静态 TF 会和 slam 的 map->odom 冲突, 必须一并清掉
-    pkill -f '[s]tatic_transform_publisher'
+    pkill -f '[r]oadmap_explorer roadmap_explorer_msgs/action/Explore'
+    # SLAM/Nav2 必须清: 不然 demo2 的 AMCL 会与之冲突 (两定位源不同时跑)
+    pkill -f '[a]sync_slam_toolbox'
+    pkill -f '[s]lam_toolbox'
     pkill -f '[n]av2_map_server'
     pkill -f '[c]ontroller_server'
     pkill -f '[p]lanner_server'
@@ -65,7 +68,9 @@ cleanup() {
     pkill -f '[v]elocity_smoother'
     pkill -f '[w]aypoint_follower'
     pkill -f '[b]t_navigator'
+    pkill -f '[s]tatic_transform_publisher'
     rm -f "${COVERAGE_MAP}.pgm" "${COVERAGE_MAP}.yaml"
+    echo '==Gazebo + RViz 保持运行, 可在桌面直接查看最终地图=='
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
@@ -157,6 +162,23 @@ restart_goal() {
     STALL_TICKS=0
     MAP_STALL_TICKS=0
     LAST_STALLS=$(grep -Eci 'no achievable frontiers left|no frontiers in current search radius' "$LOG_FILE" || true)
+}
+
+# 卡死挪车: 机器人钻进不可达前沿包围圈出不来时, 先取消探索,
+# 用 Nav2 把车真实开回安全点(不瞬移, 避免撕裂 slam_toolbox 位姿图),
+# 打破包围圈后再续跑。超时/失败则退回原来的直接续跑行为。
+drive_back() {
+    echo "==挪车: 开回安全点 ($RECOVERY_X, $RECOVERY_Y) 再续跑=="
+    sleep 3   # 等探索 goal 取消后 bt_navigator 释放
+    timeout 100 ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
+        "{pose: {header: {frame_id: map}, pose: {position: {x: $RECOVERY_X, y: $RECOVERY_Y, z: 0.0}, orientation: {w: 1.0}}}}" \
+        > "/tmp/recovery_nav_${SESSION}.log" 2>&1
+    if grep -q 'SUCCEEDED' "/tmp/recovery_nav_${SESSION}.log" 2>/dev/null; then
+        echo '==挪车完成, 已回到安全点=='
+    else
+        echo '==挪车未确认成功(超时/不可达), 直接续跑=='
+    fi
+    sleep 2
 }
 
 echo "==启动 roadmap_explore launch, 日志: $LOG_FILE=="
@@ -251,6 +273,10 @@ while ((SECONDS - START_TIME < DURATION)); do
             break
         fi
     fi
+    # 卡死挪车: 地图停滞(不可达前沿包围)时先把车开回安全点再续跑
+    if ((MAP_STALL_TICKS >= MAP_STALL_CHECKS_TO_RESTART || STALL_TICKS >= STALL_CHECKS_TO_RESTART)); then
+        drive_back
+    fi
     restart_goal
 done
 
@@ -269,6 +295,25 @@ if timeout 15 ros2 run nav2_map_server map_saver_cli -f "$MAP_NAME" \
 else
     REASON='正式地图保存失败'
 fi
+
+# 部署 & 归档: 无论是否达到 95%, 都把本轮地图交给演示 2/3/4 消费
+echo '==部署地图给演示 2/3/4=='
+mkdir -p "$DEPLOY_DIR"
+# 修正 image 路径 & 去掉 mode 字段 (与 nav_demo.launch 期望的 yaml 格式一致)
+sed -e "s|$(basename "${MAP_NAME}.pgm")|obstacle_field.pgm|" \
+    -e '/^mode:/d' \
+    "${MAP_NAME}.yaml" > "${DEPLOY_DIR}/obstacle_field.yaml"
+cp -f "${MAP_NAME}.pgm" "${DEPLOY_DIR}/obstacle_field.pgm"
+# 归档保留带后缀的实测图, 不覆盖后续演示消费的同名图
+cp -f "${MAP_NAME}.pgm" "${ARCHIVE_NAME}.pgm"
+cp -f "${MAP_NAME}.yaml" "${ARCHIVE_NAME}.yaml"
+# 自动传递: 同步到 ~/car_maps (演示 2/3/4 实际消费的目录)
+mkdir -p /home/yzh/car_maps
+cp -f "${DEPLOY_DIR}/obstacle_field.pgm" /home/yzh/car_maps/obstacle_field.pgm
+cp -f "${DEPLOY_DIR}/obstacle_field.yaml" /home/yzh/car_maps/obstacle_field.yaml
+echo "已部署到 $DEPLOY_DIR/obstacle_field.{pgm,yaml} (演示2/3/4自动消费)"
+echo "已自动传递到 /home/yzh/car_maps/obstacle_field.{pgm,yaml}"
+echo "已归档到 ${ARCHIVE_NAME}.{pgm,yaml}"
 
 echo "==结束: $REASON=="
 echo "日志: $LOG_FILE"

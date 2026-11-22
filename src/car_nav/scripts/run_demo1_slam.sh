@@ -1,13 +1,22 @@
 #!/bin/bash
 # ============ 演示 1: SLAM 实时建图（障碍物场地） ============
 # 用法: 在虚拟机终端直接运行  bash run_demo1_slam.sh  [最多秒数]
-#   $1 = 最长建图秒数（默认 0 = 一直跑到地图没有未知区域为止）
+#   $1 = 最长建图秒数（默认 0 = 覆盖率达到 95% 或没有可探索边界时停止）
 set -e
 export DISPLAY=:0
 export XAUTHORITY=$(ls /run/user/1000/.mutter-Xwaylandauth.* | head -1)
 source /opt/ros/humble/setup.bash
 source "$(dirname "$0")/../../../install/setup.bash"
 export TURTLEBOT3_MODEL=burger
+
+# 上轮 Nav2/SLAM 若未退出, 会与本轮同时发布 /map 和 TF, 导致探索节点串图。
+# 启动前先清理本项目残留进程; pkill 无匹配时返回 1, 不能让 set -e 中断脚本。
+pkill -f "[r]os2 launch car_nav" 2>/dev/null || true
+pkill -f "[n]av2_" 2>/dev/null || true
+pkill -f "[a]sync_slam_toolbox" 2>/dev/null || true
+pkill -f "[g]zserver" 2>/dev/null || true
+pkill -f "[g]zclient" 2>/dev/null || true
+pkill -f "[r]viz2" 2>/dev/null || true
 
 echo ">>> 启动 SLAM 建图 (RViz + Gazebo 窗口将出现在桌面)"
 ros2 launch car_nav slam_demo.launch.py &
@@ -22,8 +31,9 @@ case "$DURATION" in
   *.*) ;;
   *) DURATION="${DURATION}.0" ;;
 esac
-echo ">>> 启动前沿(frontier)自主探索: 会主动开向地图中所有未知区域"
-echo "    (${DURATION} 秒后强制结束; 传 0 或不传 = 跑到未知区域探索完为止)"
+echo ">>> 启动前沿(frontier)自主探索: 优先选择信息增益/距离更高的目标"
+echo "    (${DURATION} 秒后强制结束; 传 0 或不传 = 覆盖率连续达到 95% 后停止)"
+echo "    若没有可探索边界或长时间无进展, 也会安全停止并保存地图"
 echo "    也可 Ctrl+C 停止后改键盘遥控: ros2 run turtlebot3_teleop teleop_keyboard"
 # 探索节点异常不应带走后面的存图: 失败只提示, 继续存图
 if ! ros2 run car_nav frontier_explore \
